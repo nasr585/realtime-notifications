@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Realtime Notifications Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    input, textarea, select, button { display: block; width: 100%; margin: 0.25rem 0; padding: 0.5rem; box-sizing: border-box; }
+    #status { font-size: 0.9rem; color: #555; }
+    li { margin: 0.5rem 0; padding: 0.5rem; border: 1px solid #ddd; border-radius: 6px; list-style: none; }
+    ul { padding: 0; }
+    .type { font-size: 0.75rem; text-transform: uppercase; color: #777; }
+  </style>
+</head>
+<body>
+  <h1>Realtime Notifications</h1>
+  <p id="status">disconnected</p>
+
+  <section>
+    <h2>1. Connect</h2>
+    <input id="userId" placeholder="your user id, e.g. demo-user" />
+    <button id="connect">Get token and connect</button>
+  </section>
+
+  <section>
+    <h2>2. Send yourself a notification</h2>
+    <input id="title" placeholder="title" />
+    <textarea id="body" placeholder="body"></textarea>
+    <select id="type">
+      <option value="1">Info</option>
+      <option value="2">Success</option>
+      <option value="3">Warning</option>
+      <option value="4">Error</option>
+    </select>
+    <button id="send">Send</button>
+  </section>
+
+  <section>
+    <h2>Received</h2>
+    <ul id="feed"></ul>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8/dist/browser/signalr.min.js"></script>
+  <script>
+    let token = null;
+    let connection = null;
+    const status = (text) => document.getElementById("status").textContent = text;
+
+    document.getElementById("connect").onclick = async () => {
+      const userId = document.getElementById("userId").value.trim();
+      if (!userId) return;
+
+      const tokenResponse = await fetch("/api/auth/demo-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId })
+      });
+      token = (await tokenResponse.json()).token;
+
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl("/hubs/notifications", { accessTokenFactory: () => token })
+        .withAutomaticReconnect()
+        .build();
+
+      connection.on("notificationReceived", (notification) => {
+        const item = document.createElement("li");
+        item.innerHTML = `<span class="type">${notification.type}</span> <strong></strong><br/><span></span>`;
+        item.querySelector("strong").textContent = notification.title;
+        item.querySelector("span:last-child").textContent = notification.body;
+        document.getElementById("feed").prepend(item);
+      });
+
+      await connection.start();
+      status("connected as " + userId);
+    };
+
+    document.getElementById("send").onclick = async () => {
+      const userId = document.getElementById("userId").value.trim();
+      const response = await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({
+          recipientUserId: userId,
+          title: document.getElementById("title").value,
+          body: document.getElementById("body").value,
+          type: Number(document.getElementById("type").value)
+        })
+      });
+      if (!response.ok) status("send failed: " + response.status);
+    };
+  </script>
+</body>
+</html>
